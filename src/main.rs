@@ -5,6 +5,8 @@ use sodiumoxide;
 use sodiumoxide::crypto::secretstream::{gen_key, Stream, Tag};
 use sodiumoxide::crypto::secretstream::xchacha20poly1305;
 
+use regex;
+
 mod colorutil;
 use colorutil::printcoln;
 use termcolor::Color;
@@ -15,6 +17,8 @@ use crate::config::Config;
 mod config;
 
 mod subcommands;
+
+mod filelist;
 
 
 fn main() {
@@ -130,6 +134,9 @@ fn main() {
 
     // Save config
     config.save_to(cfg_location).unwrap();
+
+    filelist::verify_structure("backuplist.txt").unwrap();
+    filelist::build_file_list("backuplist.txt");
 
 
     printcoln(Color::Green, format!("[{:.3}] Init SodiumOxide", t_start.elapsed().as_secs_f32()));

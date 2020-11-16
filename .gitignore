@@ -2,3 +2,4 @@
 .idea/
 *.cfg
 Cargo.lock
+backuplist.txt
