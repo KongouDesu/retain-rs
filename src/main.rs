@@ -22,8 +22,6 @@ mod filelist;
 
 
 fn main() {
-    let t_start = std::time::Instant::now();
-
     let args = App::new("retain-rs")
         .version(&crate_version!()[..])
         .author("Kongou <github.com/KongouDesu>")
@@ -50,20 +48,17 @@ fn main() {
                 .long("bucket_name")
                 .takes_value(true)
                 .value_name("BUCKET_NAME"))
-            .subcommand(SubCommand::with_name("secret")
-                .about("Set how the encryption secret key should be handled")
-                .arg(Arg::with_name("kind")
-                    .help("How the secret key is stored. In the config file directly (string) or as a path to the key-file (path)")
-                    .index(1)
-                    .required(true)
-                    .possible_values(&["string","path"])
-                    .case_insensitive(true)
-                    .value_name("KIND"))
-                .arg(Arg::with_name("value")
-                    .help("The secret key or the path to the file containing, depending on your choice for 'KIND'")
-                    .index(2)
-                    .required(true)
-                    .value_name("KEY/PATH"))))
+            .arg(Arg::with_name("filelist")
+                .short("l")
+                .long("list")
+                .takes_value(true)
+                .value_name("FILE_LIST"))
+            .arg(Arg::with_name("secret")
+                .help("Path to keyfile")
+                .short("s")
+                .long("secret")
+                .takes_value(true)
+                .value_name("SECRET_FILE")))
 
 
         .subcommand(SubCommand::with_name("status")
@@ -109,9 +104,14 @@ fn main() {
             Provides important information about encryption and how to choose what files gets uploaded"))
         .subcommand(SubCommand::with_name("backup")
             .about("Upload, download or synchronize with remote storage")
-            .subcommand(SubCommand::with_name("upload"))
-            .subcommand(SubCommand::with_name("download"))
-            .subcommand(SubCommand::with_name("sync")))
+            .arg(Arg::with_name("action")
+                .help("Type of backup action to take, upload, download or synchronize")
+                .required(true)
+                .possible_values(&["upload","download","sync"])
+                .case_insensitive(true)
+                .min_values(1)
+                .max_values(1)
+                .index(1)))
 
 
         .get_matches();
@@ -120,11 +120,16 @@ fn main() {
     // Load config file
     let cfg_location = args.value_of("location").unwrap();
     let mut config = Config::from_file(cfg_location);
-    println!("{:?}", config);
+    //println!("{:?}", config);
 
     match args.subcommand() {
-        ("config", config_args) => subcommands::configure(&mut config, config_args),
+        ("config", config_args) => {
+            subcommands::configure(&mut config, config_args);
+            // Save config
+            config.save_to(cfg_location).unwrap();
+        },
         ("status", status_args) => subcommands::status(&config),
+        ("backup", backup_args) => subcommands::backup::backup(&config, backup_args),
         ("encryption", encrypt_args) => unimplemented!(),
         ("check", _check_args) => unimplemented!(),
         _ => {
@@ -132,21 +137,5 @@ fn main() {
         }
     };
 
-    // Save config
-    config.save_to(cfg_location).unwrap();
-
-    filelist::verify_structure("backuplist.txt").unwrap();
-    filelist::build_file_list("backuplist.txt");
-
-
-    printcoln(Color::Green, format!("[{:.3}] Init SodiumOxide", t_start.elapsed().as_secs_f32()));
-    match sodiumoxide::init() {
-        Ok(()) => (),
-        Err(()) => {
-            printcoln(Color::Red, format!("[{:.3}] SodiumOxide init failed!", t_start.elapsed().as_secs_f32()));
-            panic!("SodiumOxide init failure");
-        }
-    }
-    printcoln(Color::Green, format!("[{:.3}] Init OK", t_start.elapsed().as_secs_f32()));
 
 }

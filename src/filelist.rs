@@ -29,6 +29,7 @@
 use std::path::Path;
 use regex::{Regex,RegexSet};
 use walkdir::WalkDir;
+use std::fs::FileType;
 
 /// Verifies the structure of the backup list is correct without collecting files
 /// Returns OK or an Err with where in the file it encountered an error
@@ -95,7 +96,7 @@ pub fn build_file_list<T: AsRef<Path>>(file: T) -> Vec<String> {
                     Some(s) => s,
                     None => continue,
                 };
-                if !reg_set.is_match(name) {
+                if !reg_set.is_match(name) && entry.file_type().is_file() {
                     files.push(name.to_string());
                 }
             }

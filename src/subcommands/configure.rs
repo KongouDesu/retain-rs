@@ -1,4 +1,4 @@
-use crate::config::{Config, SecretStorage, StorageType};
+use crate::config::{Config};
 use clap::ArgMatches;
 use std::str::FromStr;
 use crate::colorutil::printcoln;
@@ -27,21 +27,20 @@ pub fn configure(config: &mut Config, args: Option<&ArgMatches>) {
         println!("Set Bucket Name: {}", s);
     }
 
-    match args.subcommand() {
-        ("secret", secret_args) => {
-            // Safe to unwrap: Clap verifies args are present before we reach this
-            let secret_args = secret_args.unwrap();
-            let kind = match secret_args.value_of("kind").unwrap().to_lowercase().as_str() {
-                "string" => StorageType::Literal,
-                "path" => StorageType::FilePath,
-                s => panic!(format!("Unexpected value {:?} for secret kind", s)),
-            };
-            let value = secret_args.value_of("value").unwrap().to_string();
-            config.secret_key = Some(SecretStorage {
-                kind,
-                value,
-            });
+    if let Some(s) = args.value_of("filelist") {
+        config.backup_list = Some(s.to_string());
+        println!("Set File List Path: {}", s);
+        if !std::path::Path::new(s).is_file() {
+            printcoln(Color::Red, "Warning: file is either missing or inaccessible")
         }
-        _ => ()
     }
+
+    if let Some(s) = args.value_of("secret") {
+        config.secret_key = Some(s.to_string());
+        println!("Set Keyfile Path: {}", s);
+        if !std::path::Path::new(s).is_file() {
+            printcoln(Color::Red, "Warning: keyfile is either missing or inaccessible")
+        }
+    }
+
 }

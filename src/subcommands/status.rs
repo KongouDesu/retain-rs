@@ -30,15 +30,20 @@ pub fn status(config: &Config) {
 
     print!("Secret Key: \t");
     if config.encrypt.is_some() && !config.encrypt.unwrap() {
-        printcoln(Color::Green, "Encryption Disabled")
+        printcoln(Color::Yellow, "Encryption Disabled")
     } else {
         match &config.secret_key {
-            Some(k) => match &k.kind {
-                crate::config::StorageType::Literal => printcoln(Color::Green, "Stored in config file"),
-                crate::config::StorageType::FilePath => printcoln(Color::Green, &k.value),
+            Some(s) => {
+                if std::path::Path::new(&s).is_file() {
+                    printcoln(Color::Green, format!("{}", s))
+                } else {
+                    printcoln(Color::Red, format!("File not found or inaccessible ({})", s))
+                }
             }
-            None => printcoln(Color::Red, "Unset"),
-        };
+            None => {
+                printcoln(Color::Red, "No secret keyfile set");
+            }
+        }
     }
 
 
