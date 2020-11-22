@@ -8,6 +8,10 @@
 /// If there is not enough data to fill a block, it will be padded to fit
 /// The last 4 bytes of an encrypted file is the big-endian u32 number of padded bytes
 /// Padding is anywhere from 4 to BLOCK_LENGTH bytes
+///
+/// We can fit BLOCK_LENGTH-16 data-bytes in a block
+/// If the last block has more than BLOCK_LENGTH-16-4 data-bytes, it will pad a full block + 1 to 3 bytes
+/// This is because it can't fit the amount padded otherwise
 
 
 // Length of a block of data
@@ -18,6 +22,7 @@
 // This lets us write BLOCK_LENGTH chunks at a time
 // As a result, this value must be strictly greater than 16
 pub const BLOCK_LENGTH: u32 = 8192;
+pub const DATA_LENGTH: u32 = BLOCK_LENGTH-16;
 
 mod traits;
 
@@ -27,5 +32,5 @@ mod test;
 ///
 /// This accounts for the encryption overhead
 pub fn get_nonces_required(length: u64) -> u128 {
-    return (length/(BLOCK_LENGTH as u64-16)+1) as u128;
+    return ((length+3)/(BLOCK_LENGTH as u64-16)+1) as u128;
 }

@@ -9,6 +9,7 @@ use chacha20poly1305::aead::{Aead, NewAead};
 
 // Size of a 'block'
 use super::BLOCK_LENGTH;
+use crate::encryption::DATA_LENGTH;
 
 // Represents the state of the reader. It progresses through them in order
 // Nonce: write the initial nonce to the file
@@ -29,7 +30,7 @@ pub struct EncryptingReader<R: Read> {
     state: EncReadState,
     nonce: u128, // Current nonce (counter)
     nonce_max: u128, // The maximum allowed value of 'nonce'
-    input_buffer: [u8; (BLOCK_LENGTH-16) as usize], // Buffered data read from 'inner', until we have a full block of data
+    input_buffer: [u8; DATA_LENGTH as usize], // Buffered data read from 'inner', until we have a full block of data
     output_buffer: [u8; BLOCK_LENGTH as usize], // Buffered output, in case our supplied buffer isn't large enough
     read: usize, // Tracks amount read to the input buffer
     written: usize, // Tracks amount returned from the output buffer
@@ -76,7 +77,7 @@ impl<R: Read> Read for EncryptingReader<R> {
                     self.state = EncReadState::Pad;
                     return Ok(self.read(buf)?);
                 }
-                // At this point, the buffer contains exactly BLOCK_LENGTH bytes
+                // At this point, the buffer contains exactly DATA_LENGTH bytes
                 let mut nonce_arr = vec![0u8; 8]; // We only use the lower 16 bit of the 24 bit nonce
                 nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
                 let nonce = XNonce::from_slice(&nonce_arr);
@@ -89,12 +90,16 @@ impl<R: Read> Read for EncryptingReader<R> {
                 Ok(self.written)
             } // Add (encrypted) padding
             EncReadState::Pad => {
-                // We need to determine amount of bytes to pad
-                // First, account for whatever is currently in the buffer (0 to BLOCK_LENGTH-1)
-                self.total_size += self.read as u64;
-                // If total_length is a multiple of BLOCK_LENGTH, this pads a full block
-                // Otherwise, it pads 1 to BLOCK_LENGTH-1 bytes, depending on the total size
-                let pad_amount = (BLOCK_LENGTH as u64) - (self.total_size % (BLOCK_LENGTH as u64));
+                // First we need to determine amount of bytes to pad
+                // This is enough bytes to get us to DATA_LEN bytes of data
+                // If this is less than 4 bytes we cannot fit the amount of padding added
+                // In that case we pad that amount + a full block
+                let pad_amount;
+                if self.pad_extra == 0 { // First pass, how much pad is needed
+                    pad_amount = (DATA_LENGTH as u64) - self.read as u64;
+                } else { // If we needed less than 1-3 bytes of padding, add a full block
+                    pad_amount = DATA_LENGTH as u64;
+                }
 
                 // Due to the BLOCK_LENGTH being 4 bytes, we need at least 4 bytes pad for the scheme
                 // If we don't have that:
@@ -108,6 +113,7 @@ impl<R: Read> Read for EncryptingReader<R> {
                 // * We use BLOCK_LENGTH+self.pad_extra as the amount padded
                 if pad_amount < 4 {
                     self.pad_extra = pad_amount;
+                    self.read = 0; // We've accounted for it now
                     let mut nonce_arr = vec![0u8; 8];
                     nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
                     let nonce = XNonce::from_slice(&nonce_arr);
@@ -121,7 +127,7 @@ impl<R: Read> Read for EncryptingReader<R> {
                     return Ok(self.written);
                 }
 
-                // Here we know that the amount to pad is 4 to BLOCK_LENGTH and thus fits in 1 buffer
+                // Here we know that the amount to pad is 4 to BLOCK_LENGTH bytes and thus fits in 1 output_buffer
                 // We also know that we have enough room for the scheme
                 // Note that we have to add 'self.pad_extra' to the amount padded, since we might have hit the above case
                 let pad_num = pad_amount + self.pad_extra;
