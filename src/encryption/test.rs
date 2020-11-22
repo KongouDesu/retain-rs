@@ -4,6 +4,7 @@ mod tests {
     use chacha20poly1305::Key;
     use crate::encryption::{BLOCK_LENGTH,get_nonces_required};
     use std::io::{Cursor, Read, Write};
+    use crate::encryption::writer::DecryptingWriter;
 
     #[test]
     fn test_write_to_file() {
@@ -17,7 +18,7 @@ mod tests {
         let mut written = 0;
         while let Ok(n) = reader.read(&mut buf) {
             if n != 0 {
-                out.write_all(&mut buf[..n]);
+                out.write_all(&mut buf[..n]).unwrap();
                 written += n;
                 if written > 100000 {
                     panic!("Infinite loop(?)");
@@ -99,6 +100,119 @@ mod tests {
                 }
             }
             assert_eq!(read, 16384 + 16);
+        }
+    }
+
+    #[test]
+    fn test_encrypt_decrypt() {
+        // Encrypt
+        let buf = std::fs::File::open("secret.jpg").unwrap();
+        let len = std::fs::metadata("secret.jpg").unwrap().len();
+        let mut reader = EncryptingReader::wrap(buf,
+                                                Key::from_slice(b"an example very very secret key."),
+                                                0, get_nonces_required(len));
+
+        let mut buf = [0u8; 4096];
+        let mut out = std::fs::File::create("secret.encrypted").unwrap();
+        let mut written = 0u64;
+        let mut read = 0u64;
+        while let Ok(n) = reader.read(&mut buf) {
+            if n != 0 {
+                out.write_all(&mut buf[..n]).unwrap();
+                written += n as u64;
+                if written > len*2 {
+                    panic!("Wrote way too much");
+                }
+            } else {
+                break;
+            }
+        }
+        out.sync_all().unwrap();
+        let mut file = std::fs::File::open("secret.encrypted").unwrap();
+        let mut outf = std::fs::File::create("secret.decrypted").unwrap();
+        let mut writer = DecryptingWriter::target(&outf, Key::from_slice(b"an example very very secret key."));
+
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = file.read(&mut buf) {
+            if n != 0 {
+                writer.write_all(&buf[..n]).unwrap();
+            } else {
+                break;
+            }
+        }
+        writer.flush().unwrap();
+        outf.sync_all().unwrap();
+
+        let original = std::fs::read("secret.jpg").unwrap();
+        let decrypted = std::fs::read("secret.decrypted").unwrap();
+
+        assert_eq!(original, decrypted);
+    }
+
+    #[test]
+    fn test_same_file_repeated_differs() {
+        for i in 1..3 {
+            {
+                let buf = std::fs::File::open("secret.jpg").unwrap();
+                let len = std::fs::metadata("secret.jpg").unwrap().len();
+                let mut reader = EncryptingReader::wrap(buf,
+                                                        Key::from_slice(b"an example very very secret key."),
+                                                        i*get_nonces_required(len), get_nonces_required(len));
+
+                let mut buf = [0u8; 4096];
+                let mut out = std::fs::File::create(format!("secret{}.encrypted",i)).unwrap();
+                let mut written = 0u64;
+                let mut read = 0u64;
+                while let Ok(n) = reader.read(&mut buf) {
+                    if n != 0 {
+                        out.write_all(&mut buf[..n]).unwrap();
+                        written += n as u64;
+                        if written > len * 2 {
+                            panic!("Wrote way too much");
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                out.sync_all().unwrap();
+            }
+        }
+
+        let s1 = std::fs::read("secret1.encrypted").unwrap();
+        let s2 = std::fs::read("secret2.encrypted").unwrap();
+        assert_ne!(s1,s2);
+    }
+
+    #[test]
+    fn test_bulk_encrypt_decrypt() {
+        for x in 0..BLOCK_LENGTH*4 {
+            // Encrypt
+            let mut orig_data = vec![7u8; x];
+            let indata = Cursor::new(&mut orig_data);
+            let mut reader = EncryptingReader::wrap(indata,
+                                                    Key::from_slice(b"an example very very secret key."),
+                                                    0, get_nonces_required(x as u64));
+
+            let mut buf = [0u8; 4096];
+            let mut written = 0u64;
+            let mut decr: Vec<u8> = Vec::with_capacity(x);
+            let outdata = Cursor::new(&mut decr);
+            let mut writer = DecryptingWriter::target(outdata, Key::from_slice(b"an example very very secret key."));
+
+            while let Ok(n) = reader.read(&mut buf) {
+                if n != 0 {
+                    writer.write_all(&mut buf[..n]).unwrap();
+                    written += n as u64;
+                    if written > (get_nonces_required(x as u64) as usize*BLOCK_LENGTH + 16) as u64 {
+                        panic!("Wrote way too much x{} ({} expected, got {})", x, (get_nonces_required(x as u64) as usize*BLOCK_LENGTH + 16), written);
+                    }
+                } else {
+                    break;
+                }
+            }
+            writer.flush().unwrap();
+
+            assert_eq!(orig_data, decr);
         }
     }
 

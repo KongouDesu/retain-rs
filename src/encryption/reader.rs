@@ -7,7 +7,7 @@ use chacha20poly1305::aead::{Aead, NewAead};
 
 // Size of a 'block'
 use super::BLOCK_LENGTH;
-use crate::encryption::DATA_LENGTH;
+use crate::encryption::{DATA_LENGTH, nonce_from_u128};
 
 // Represents the state of the reader. It progresses through them in order
 // Nonce: write the initial nonce to the file
@@ -33,7 +33,7 @@ pub struct EncryptingReader<R: Read> {
     read: usize, // Tracks amount read to the input buffer
     written: usize, // Tracks amount returned from the output buffer
     total_size: u64, // Tracks how much we've read, in total, from the inner reader
-    pad_extra: u64, // Extra padding, see padding code below
+    pad_extra: u32, // Extra padding, see padding code below
 }
 
 impl<R: Read> Read for EncryptingReader<R> {
@@ -76,11 +76,9 @@ impl<R: Read> Read for EncryptingReader<R> {
                     return Ok(self.read(buf)?);
                 }
                 // At this point, the buffer contains exactly DATA_LENGTH bytes
-                let mut nonce_arr = vec![0u8; 8]; // We only use the lower 16 bit of the 24 bit nonce
-                nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
-                let nonce = XNonce::from_slice(&nonce_arr);
+                let nonce = nonce_from_u128(self.nonce);
                 self.nonce += 1;
-                let ciphertext = self.aead.encrypt(nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
+                let ciphertext = self.aead.encrypt(&nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
                 self.output_buffer.copy_from_slice(&ciphertext);
                 self.written = 0;
                 self.written += buf.write(&self.output_buffer)?;
@@ -92,11 +90,11 @@ impl<R: Read> Read for EncryptingReader<R> {
                 // This is enough bytes to get us to DATA_LEN bytes of data
                 // If this is less than 4 bytes we cannot fit the amount of padding added
                 // In that case we pad that amount + a full block
-                let pad_amount;
+                let pad_amount: u32;
                 if self.pad_extra == 0 { // First pass, how much pad is needed
-                    pad_amount = (DATA_LENGTH as u64) - self.read as u64;
+                    pad_amount = ((DATA_LENGTH as u64) - self.read as u64) as u32;
                 } else { // If we needed less than 1-3 bytes of padding, add a full block
-                    pad_amount = DATA_LENGTH as u64;
+                    pad_amount = DATA_LENGTH as u32;
                 }
 
                 // Due to the BLOCK_LENGTH being 4 bytes, we need at least 4 bytes pad for the scheme
@@ -111,39 +109,37 @@ impl<R: Read> Read for EncryptingReader<R> {
                 // * We use BLOCK_LENGTH+self.pad_extra as the amount padded
                 if pad_amount < 4 {
                     self.pad_extra = pad_amount;
-                    self.read = 0; // We've accounted for it now
-                    let mut nonce_arr = vec![0u8; 8];
-                    nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
-                    let nonce = XNonce::from_slice(&nonce_arr);
+                    let nonce = nonce_from_u128(self.nonce);
                     self.nonce += 1;
                     (&mut self.input_buffer[self.read..]).write(vec![0u8; pad_amount as usize].as_ref())?;
-                    let ciphertext = self.aead.encrypt(nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
+                    let ciphertext = self.aead.encrypt(&nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
                     self.output_buffer.copy_from_slice(&ciphertext);
                     self.written = 0;
                     self.written += buf.write(&self.output_buffer)?;
                     self.total_size += BLOCK_LENGTH as u64;
+                    self.read = 0; // We've accounted for it now
                     return Ok(self.written);
                 }
 
                 // Here we know that the amount to pad is 4 to BLOCK_LENGTH bytes and thus fits in 1 output_buffer
                 // We also know that we have enough room for the scheme
                 // Note that we have to add 'self.pad_extra' to the amount padded, since we might have hit the above case
-                let pad_num = pad_amount + self.pad_extra;
+                let pad_num: u32 = pad_amount + self.pad_extra;
                 // Write pad_amount-4 0's. This leaves 4 bytes for amount padded
-                (&mut self.input_buffer[self.read..]).write(vec![0u8; (pad_amount - 4) as usize].as_ref())?;
+                let idx = self.input_buffer.len();
+                (&mut self.input_buffer[self.read..idx-4]).copy_from_slice(vec![0u8; (pad_amount - 4) as usize].as_ref());
                 // Write the amount of padding applied
-                (&mut self.input_buffer[self.read..]).write(&pad_num.to_be_bytes())?;
+
+                (&mut self.input_buffer[idx-4..]).copy_from_slice(&pad_num.to_be_bytes());
 
                 // Encrypt, write to output buffer etc.
-                let mut nonce_arr = vec![0u8; 8];
-                nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
-                let nonce = XNonce::from_slice(&nonce_arr);
+                let nonce = nonce_from_u128(self.nonce);
                 self.nonce += 1;
-                (&mut self.input_buffer[self.read..]).write(vec![0u8; pad_amount as usize].as_ref())?;
-                let ciphertext = self.aead.encrypt(nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
+                let ciphertext = self.aead.encrypt(&nonce, self.input_buffer.as_ref()).expect("Encryption failed!");
                 self.output_buffer.copy_from_slice(&ciphertext);
                 self.written = 0;
                 self.written += buf.write(&self.output_buffer)?;
+                self.total_size += BLOCK_LENGTH as u64;
                 self.state = EncReadState::Done;
                 Ok(self.written)
             }

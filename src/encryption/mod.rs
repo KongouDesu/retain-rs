@@ -1,3 +1,6 @@
+use chacha20poly1305::{XNonce, XChaCha20Poly1305};
+use chacha20poly1305::aead::generic_array::{GenericArray, ArrayLength};
+
 /// This module defines the functionality required to encrypt and decrypt files
 ///
 /// Encryption uses the XChaCha20Poly1305 algorithm
@@ -21,10 +24,11 @@
 // Note that the MAC is 16 bytes, thus we encrypt BLOCK_LENGTH-16 bytes at a time
 // This lets us write BLOCK_LENGTH chunks at a time
 // As a result, this value must be strictly greater than 16
-pub const BLOCK_LENGTH: u32 = 8192;
-pub const DATA_LENGTH: u32 = BLOCK_LENGTH-16;
+pub const BLOCK_LENGTH: usize = 8192;
+pub const DATA_LENGTH: usize = BLOCK_LENGTH-16;
 
-mod reader;
+pub mod reader;
+pub mod writer;
 
 mod test;
 
@@ -33,4 +37,10 @@ mod test;
 /// This accounts for the encryption overhead
 pub fn get_nonces_required(length: u64) -> u128 {
     return ((length+3)/(BLOCK_LENGTH as u64-16)+1) as u128;
+}
+
+fn nonce_from_u128(number: u128) -> XNonce {
+    let mut nonce_arr = vec![0u8; 8];
+    nonce_arr.append(&mut number.to_be_bytes().to_vec());
+    XNonce::from_slice(&nonce_arr).to_owned()
 }

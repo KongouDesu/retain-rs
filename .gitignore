@@ -4,3 +4,6 @@
 *.dat
 Cargo.lock
 backuplist.txt
+*.decrypted
+*.encrypted
+secret.jpg
