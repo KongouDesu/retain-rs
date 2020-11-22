@@ -55,7 +55,7 @@ impl<R: Read> Read for EncryptingReader<R> {
             // Return the nonce, unencrypted
             // If the buffer isn't at least 16 bytes then IDK go buy a bigger one?
             EncReadState::Nonce => {
-                let bytes = self.nonce.to_be_bytes();
+                let bytes = self.nonce.to_le_bytes();
                 buf.write_all(&bytes)?;
                 self.state = EncReadState::Data;
                 Ok(bytes.len())
@@ -130,7 +130,7 @@ impl<R: Read> Read for EncryptingReader<R> {
                 (&mut self.input_buffer[self.read..idx-4]).copy_from_slice(vec![0u8; (pad_amount - 4) as usize].as_ref());
                 // Write the amount of padding applied
 
-                (&mut self.input_buffer[idx-4..]).copy_from_slice(&pad_num.to_be_bytes());
+                (&mut self.input_buffer[idx-4..]).copy_from_slice(&pad_num.to_le_bytes());
 
                 // Encrypt, write to output buffer etc.
                 let nonce = nonce_from_u128(self.nonce);

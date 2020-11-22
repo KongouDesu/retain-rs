@@ -56,7 +56,7 @@ fn main() {
             .about("Display the status of the current configuration"))
         .subcommand(SubCommand::with_name("encryption")
             .about("Enable/disable encryption or encrypt/decrypt a file")
-            .long_about("Enable/disable encryption or encrypt/decrypt a file\n\
+            .long_about("Enable/disable encryption, encrypt/decrypt a file or generate a new key\n\
             Uses the currently configured secret key")
             .arg(Arg::with_name("enable")
                 .help("Enable or disable encryption")
@@ -65,6 +65,12 @@ fn main() {
                 .possible_values(&["on","off"])
                 .case_insensitive(true)
                 .value_name("ON/OFF"))
+            .arg(Arg::with_name("keygen")
+                .help("Generate a new secret key and set it as active key")
+                .short("g")
+                .long("genkey")
+                .takes_value(true)
+                .value_name("FILE"))
             .arg(Arg::with_name("encrypt")
                 .help("Encrypt the IN_FILE, creating an encrypted version in OUT_FILE")
                 .short("e")
@@ -121,12 +127,14 @@ fn main() {
         },
         ("status", status_args) => subcommands::status(&config),
         ("backup", backup_args) => subcommands::backup::backup(&config, backup_args),
-        ("encryption", encrypt_args) => unimplemented!(),
+        ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
         ("check", _check_args) => unimplemented!(),
         _ => {
             println!("{}",args.usage());
         }
     };
+
+
 
 
 }

@@ -1,3 +1,6 @@
+// Tests for the encryption module
+// Note that some of these assume that BLOCK_LENGTH = 8192, though it should work with other values
+
 #[cfg(test)]
 mod tests {
     use crate::encryption::reader::EncryptingReader;

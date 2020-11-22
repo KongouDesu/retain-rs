@@ -1,4 +1,4 @@
-use chacha20poly1305::{XNonce};
+use chacha20poly1305::{XNonce, Key};
 
 /// This module defines the functionality required to encrypt and decrypt files
 ///
@@ -41,6 +41,12 @@ pub fn get_nonces_required(length: u64) -> u128 {
 
 fn nonce_from_u128(number: u128) -> XNonce {
     let mut nonce_arr = vec![0u8; 8];
-    nonce_arr.append(&mut number.to_be_bytes().to_vec());
+    nonce_arr.append(&mut number.to_le_bytes().to_vec());
     XNonce::from_slice(&nonce_arr).to_owned()
 }
+
+pub fn key_from_file<T: AsRef<str>>(path: T) -> Result<Key,std::io::Error> {
+    let bytes = std::fs::read(path.as_ref())?;
+    Ok(Key::clone_from_slice(&bytes))
+}
+

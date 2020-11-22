@@ -13,6 +13,9 @@ pub struct Config {
     pub encrypt: Option<bool>,
     // Path key-file. Used only if encryption is enabled
     pub secret_key: Option<String>,
+    pub nonce_ctr: u128,
+    #[serde(skip)]
+    pub location: String, // The location of the config, s.t. it can save itself
 }
 
 impl Config {
@@ -27,6 +30,10 @@ impl Config {
             if self.secret_key.is_none() { return Err("No secret key configured".to_string()) };
         }
         Ok(())
+    }
+
+    pub fn save(&self) {
+        std::fs::write(&self.location,serde_json::to_string(self).unwrap()).unwrap();
     }
 }
 

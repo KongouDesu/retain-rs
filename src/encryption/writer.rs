@@ -20,6 +20,11 @@ enum DecWriteState {
     Done,
 }
 
+// Decrypts anything written to it, writing decrypted output into 'target'
+//
+// WARNING: you **MUST** call flush() OR call write() with an empty buffer when the input stream is done
+// WARNING: If you fail to do so, some of the data may not be written to the target!
+// WARNING: Beware that write_all will _NOT_ call write() if given an empty buffer!
 pub struct DecryptingWriter<W: Write> {
     target: W, // Inner write, this will receive decrypted data
     aead: XChaCha20Poly1305,
@@ -38,9 +43,9 @@ impl<W: Write> Write for DecryptingWriter<W> {
                 self.input_buffer[self.received..self.received+read_len].copy_from_slice(&buf[..read_len]);
                 self.received += read_len;
                 if self.received == 16 {
-                    let mut be_bytes = [0u8; 16];
-                    be_bytes.copy_from_slice(&self.input_buffer[..16]);
-                    self.nonce = u128::from_be_bytes(be_bytes);
+                    let mut le_bytes = [0u8; 16];
+                    le_bytes.copy_from_slice(&self.input_buffer[..16]);
+                    self.nonce = u128::from_le_bytes(le_bytes);
                     self.state = DecWriteState::Data;
                     self.received = 0;
                 }
@@ -62,7 +67,7 @@ impl<W: Write> Write for DecryptingWriter<W> {
                 if self.received == self.input_buffer.len() {
                     // We got 3 blocks. Block 1 is not padded, decrypt and write it
                     let mut nonce_arr = vec![0u8; 8];
-                    nonce_arr.append(&mut self.nonce.to_be_bytes().to_vec());
+                    nonce_arr.append(&mut self.nonce.to_le_bytes().to_vec());
                     let nonce = XNonce::from_slice(&nonce_arr);
                     self.nonce += 1;
                     let plaintext = self.aead.decrypt(nonce, &self.input_buffer[..BLOCK_LENGTH])
@@ -85,9 +90,9 @@ impl<W: Write> Write for DecryptingWriter<W> {
                         self.nonce += 1;
                         let plaintext = self.aead.decrypt(&nonce, &self.input_buffer[..BLOCK_LENGTH])
                             .expect("Decryption failed!");
-                        let mut be_bytes = [0u8; 4];
-                        be_bytes.copy_from_slice(&plaintext[plaintext.len()-4..]);
-                        let pad_amount = u32::from_be_bytes(be_bytes) as usize;
+                        let mut le_bytes = [0u8; 4];
+                        le_bytes.copy_from_slice(&plaintext[plaintext.len()-4..]);
+                        let pad_amount = u32::from_le_bytes(le_bytes) as usize;
                         self.target.write_all(&plaintext[..plaintext.len()-pad_amount])?;
                     } else if self.received == 2*BLOCK_LENGTH as usize { // 2 blocks
                         let nonce = nonce_from_u128(self.nonce);
@@ -98,9 +103,9 @@ impl<W: Write> Write for DecryptingWriter<W> {
                         self.nonce += 1;
                         let plaintext2 = self.aead.decrypt(&nonce, &self.input_buffer[BLOCK_LENGTH..2*BLOCK_LENGTH])
                             .expect("Decryption failed!");
-                        let mut be_bytes = [0u8; 4];
-                        be_bytes.copy_from_slice(&plaintext2[plaintext2.len()-4..]);
-                        let mut pad_amount = u32::from_be_bytes(be_bytes) as usize;
+                        let mut le_bytes = [0u8; 4];
+                        le_bytes.copy_from_slice(&plaintext2[plaintext2.len()-4..]);
+                        let mut pad_amount = u32::from_le_bytes(le_bytes) as usize;
                         if pad_amount >= DATA_LENGTH { // Full block pad, ignore plaintext2
                             pad_amount -= DATA_LENGTH;
                             self.target.write_all(&plaintext1[..plaintext1.len()-pad_amount])?;
