@@ -24,7 +24,7 @@
 pub const BLOCK_LENGTH: u32 = 8192;
 pub const DATA_LENGTH: u32 = BLOCK_LENGTH-16;
 
-mod traits;
+mod reader;
 
 mod test;
 

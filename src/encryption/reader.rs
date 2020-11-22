@@ -1,7 +1,5 @@
-/// Provides the encryption `Read` and `Write` traits
-/// These wrap another Read/Write trait object
-/// The Reader will encrypt anything read from the inner reader
-/// The Writer will encrypt anything it is told to write
+/// Provides the encryption `Read` part
+/// Wraps another Reader, encrypting everything from it
 
 use std::io::{Read, Write};
 use chacha20poly1305::{XChaCha20Poly1305, Key, XNonce};

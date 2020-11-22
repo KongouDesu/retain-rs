@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::encryption::traits::EncryptingReader;
+    use crate::encryption::reader::EncryptingReader;
     use chacha20poly1305::Key;
     use crate::encryption::{BLOCK_LENGTH,get_nonces_required};
     use std::io::{Cursor, Read, Write};
