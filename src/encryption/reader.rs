@@ -2,7 +2,7 @@
 /// Wraps another Reader, encrypting everything from it
 
 use std::io::{Read, Write};
-use chacha20poly1305::{XChaCha20Poly1305, Key, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, Key};
 use chacha20poly1305::aead::{Aead, NewAead};
 
 // Size of a 'block'

@@ -1,5 +1,4 @@
-use chacha20poly1305::{XNonce, XChaCha20Poly1305};
-use chacha20poly1305::aead::generic_array::{GenericArray, ArrayLength};
+use chacha20poly1305::{XNonce};
 
 /// This module defines the functionality required to encrypt and decrypt files
 ///
@@ -35,6 +34,7 @@ mod test;
 /// Computes the required amount of nonces to encrypt 'length' bytes
 ///
 /// This accounts for the encryption overhead
+#[allow(dead_code)]
 pub fn get_nonces_required(length: u64) -> u128 {
     return ((length+3)/(BLOCK_LENGTH as u64-16)+1) as u128;
 }

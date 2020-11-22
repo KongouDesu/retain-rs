@@ -75,7 +75,6 @@ mod tests {
                 }
 
             }
-            println!("{} read {}",x ,read);
             assert_eq!(read, 16384+16);
         }
     }

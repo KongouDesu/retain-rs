@@ -1,7 +1,7 @@
 /// Provides the decrypting `Write` part
 /// Targets another Writer, sending decrypted data to it
 
-use std::io::{Read, Write};
+use std::io::{Write};
 use chacha20poly1305::{XChaCha20Poly1305, Key, XNonce};
 use chacha20poly1305::aead::{Aead, NewAead};
 
@@ -87,7 +87,7 @@ impl<W: Write> Write for DecryptingWriter<W> {
                             .expect("Decryption failed!");
                         let mut be_bytes = [0u8; 4];
                         be_bytes.copy_from_slice(&plaintext[plaintext.len()-4..]);
-                        let mut pad_amount = u32::from_be_bytes(be_bytes) as usize;
+                        let pad_amount = u32::from_be_bytes(be_bytes) as usize;
                         self.target.write_all(&plaintext[..plaintext.len()-pad_amount])?;
                     } else if self.received == 2*BLOCK_LENGTH as usize { // 2 blocks
                         let nonce = nonce_from_u128(self.nonce);
