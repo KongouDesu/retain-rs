@@ -1,17 +1,6 @@
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::time::Duration;
-
-use sodiumoxide;
-use sodiumoxide::crypto::secretstream::{gen_key, Stream, Tag};
-use sodiumoxide::crypto::secretstream::xchacha20poly1305;
-
-use regex;
-
 mod colorutil;
-use colorutil::printcoln;
-use termcolor::Color;
 
-use clap::{Arg, App, SubCommand, crate_version, ArgGroup};
+use clap::{Arg, App, SubCommand, crate_version};
 use crate::config::Config;
 
 mod config;
@@ -19,6 +8,8 @@ mod config;
 mod subcommands;
 
 mod filelist;
+
+mod encryption;
 
 
 fn main() {

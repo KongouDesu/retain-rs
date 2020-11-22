@@ -1,6 +1,5 @@
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use std::io::Write;
-use std::time::Instant;
 
 /// Prints the given text with the given color
 /// Does not include a newline

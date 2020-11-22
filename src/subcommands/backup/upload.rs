@@ -30,14 +30,7 @@ pub fn start(config: &Config) {
     match config.encrypt.unwrap() {
         true => {
             printcoln(Color::Green, "Encryption is enabled");
-            printcoln(Color::Green, format!("[{:.3}] Init SodiumOxide", t_start.elapsed().as_secs_f32()));
-            match sodiumoxide::init() {
-                Ok(()) => (),
-                Err(()) => {
-                    printcoln(Color::Red, format!("[{:.3}] SodiumOxide init failed!", t_start.elapsed().as_secs_f32()));
-                    panic!("SodiumOxide init failure");
-                }
-            }
+            // TODO: Verify encryption works on this platform(?)
             printcoln(Color::Green, format!("[{:.3}] Init OK", t_start.elapsed().as_secs_f32()));
         }
         false => {
