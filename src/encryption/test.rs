@@ -5,14 +5,14 @@
 mod tests {
     use crate::encryption::reader::EncryptingReader;
     use chacha20poly1305::Key;
-    use crate::encryption::{BLOCK_LENGTH,get_nonces_required};
+    use crate::encryption::{BLOCK_LENGTH, get_nonces_required, get_encrypted_size};
     use std::io::{Cursor, Read, Write};
     use crate::encryption::writer::DecryptingWriter;
 
     #[test]
     fn test_write_to_file() {
-        let buf = vec![1u8;43863];
-        let mut reader = EncryptingReader::wrap(Cursor::new(buf),
+        let filebuf = vec![1u8;43863];
+        let mut reader = EncryptingReader::wrap(Cursor::new(filebuf),
                                                 Key::from_slice(b"an example very very secret key."),
                                                 0, get_nonces_required(43863));
 
@@ -30,6 +30,7 @@ mod tests {
                 break;
             }
         }
+        assert_eq!(get_encrypted_size(43863u64),written as u64);
     }
 
     #[test]
@@ -53,6 +54,7 @@ mod tests {
                 }
             }
             assert_eq!(read, 8192 + 16);
+            assert_eq!(get_encrypted_size(x as u64),read as u64);
         }
     }
 
@@ -79,6 +81,7 @@ mod tests {
 
             }
             assert_eq!(read, 16384+16);
+            assert_eq!(get_encrypted_size(x as u64),read as u64);
         }
     }
 
@@ -102,6 +105,7 @@ mod tests {
                 }
             }
             assert_eq!(read, 16384 + 16);
+            assert_eq!(get_encrypted_size(x as u64),read as u64);
         }
     }
 
@@ -164,8 +168,9 @@ mod tests {
                 let mut buf = [0u8; 4096];
                 let mut out = std::fs::File::create(format!("secret{}.encrypted",i)).unwrap();
                 let mut written = 0u64;
-                let mut read = 0u64;
+                let mut read = 0;
                 while let Ok(n) = reader.read(&mut buf) {
+                    read += n;
                     if n != 0 {
                         out.write_all(&mut buf[..n]).unwrap();
                         written += n as u64;
@@ -176,6 +181,7 @@ mod tests {
                         break;
                     }
                 }
+                assert_eq!(get_encrypted_size(len as u64),read as u64);
                 out.sync_all().unwrap();
             }
         }
@@ -196,12 +202,14 @@ mod tests {
                                                     0, get_nonces_required(x as u64));
 
             let mut buf = [0u8; 4096];
+            let mut read = 0;
             let mut written = 0u64;
             let mut decr: Vec<u8> = Vec::with_capacity(x);
             let outdata = Cursor::new(&mut decr);
             let mut writer = DecryptingWriter::target(outdata, Key::from_slice(b"an example very very secret key."));
 
             while let Ok(n) = reader.read(&mut buf) {
+                read += n;
                 if n != 0 {
                     writer.write_all(&mut buf[..n]).unwrap();
                     written += n as u64;
@@ -215,6 +223,7 @@ mod tests {
             writer.flush().unwrap();
 
             assert_eq!(orig_data, decr);
+            assert_eq!(get_encrypted_size(x as u64),read as u64);
         }
     }
 

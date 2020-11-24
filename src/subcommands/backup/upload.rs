@@ -5,8 +5,11 @@ use termcolor::Color;
 use scoped_pool::Pool;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
-use raze::api::{BucketResult, ListBucketParams};
+use raze::api::{BucketResult, ListBucketParams, Sha1Variant};
 use raze::Error;
+use crate::encryption::{get_encrypted_size, get_nonces_required};
+use crate::encryption::reader::EncryptingReader;
+use chacha20poly1305::Key;
 
 pub fn start(config: &Config) {
     let t_start = std::time::Instant::now();
@@ -27,16 +30,40 @@ pub fn start(config: &Config) {
         }
     }
 
+    let mut key = None;
     match config.encrypt.unwrap() {
         true => {
             printcoln(Color::Green, "Encryption is enabled");
             // TODO: Verify encryption works on this platform(?)
+            match std::fs::read(config.secret_key.as_ref().unwrap()) {
+                Ok(bytes) => {
+                    key = Some(Key::clone_from_slice(&bytes));
+                }
+                Err(err) => {
+                    printcoln(Color::Red, format!("[{:.3}] Failed to open key-file {:?}", t_start.elapsed().as_secs_f32(), err));
+                    return;
+                }
+            }
             printcoln(Color::Green, format!("[{:.3}] Init OK", t_start.elapsed().as_secs_f32()));
         }
         false => {
-            printcoln(Color::Yellow, "Encryption is disabled")
+            printcoln(Color::Yellow, "Encryption is disabled");
         }
     }
+
+    printcoln(Color::Green, format!("[{:.3}] Loading local file manifest", t_start.elapsed().as_secs_f32()));
+    let mut manifest = match crate::manifest::FileManifest::from_file("manifest.json") {
+        Ok(fm) => fm,
+        Err(err) => {
+            printcoln(Color::Red, format!("[{:.3}] Failed to load file manifest {:?}", t_start.elapsed().as_secs_f32(), err));
+            printcoln(Color::Yellow, format!("[{:.3}] If it is missing due to the program being set up without using the init command:", t_start.elapsed().as_secs_f32()));
+            printcoln(Color::Yellow, format!("[{:.3}] * Run init to generate a new one, starting tracking from scratch", t_start.elapsed().as_secs_f32()));
+            printcoln(Color::Yellow, format!("[{:.3}] * Or ensure your previous manifest can be found", t_start.elapsed().as_secs_f32()));
+            return;
+        }
+    };
+    let manifest_mutex = Mutex::new(&mut manifest);
+    printcoln(Color::Green, format!("[{:.3}] Loaded manifest", t_start.elapsed().as_secs_f32()));
 
     printcoln(Color::Green, format!("[{:.3}] Building list of files to upload...", t_start.elapsed().as_secs_f32()));
     let files = filelist::build_file_list(config.backup_list.as_ref().unwrap());
@@ -83,6 +110,11 @@ pub fn start(config: &Config) {
     printcoln(Color::Green, format!("[{:.3}] {} -> {}", t_start.elapsed().as_secs_f32(), bucket_name, bucket_id));
 
     printcoln(Color::Green, format!("[{:.3}] Beginning upload", t_start.elapsed().as_secs_f32()));
+
+    // Load last known nonce
+    let mut nonce_ctr = Mutex::new(config.nonce_ctr);
+
+
     let pool = Pool::new(8); // Pool size = num threads = concurrent uploads
     pool.scoped(|scope| {
         // Spawn 1 task per worker
@@ -90,6 +122,9 @@ pub fn start(config: &Config) {
             let files = files.clone();
             let client = &client;
             let auth = &auth;
+            let nonce_ctr = &nonce_ctr;
+
+            let manifest = &manifest_mutex;
             scope.execute(move || {
                 let upauth = raze::api::b2_get_upload_url(&client, &auth, bucket_id).unwrap();
                 loop {
@@ -104,22 +139,11 @@ pub fn start(config: &Config) {
                             break;
                         }
                     };
-                    let path_str = path.replace("\\", "/");
+                    // Normalize path style s.t. we _always_ use forward slash as separator
+                    let path = path.replace("\\", "/");
 
-                    // TODO: we only need to do this if encryption is disabled
-                    // Under Unix, all paths are naturally prefix with '/' (the root)
-                    // B2 will not emulate folders if we start the path with a slash,
-                    // so we strip it here to make it behave correctly
-                    let name_in_b2 = if cfg!(windows) {
-                        &path_str
-                    } else {
-                        &path_str[1..]
-                    };
-
-                    // TODO Check if the file is already backed up
-                    // TODO If it is, compare modified time to see if we should upload it
-                    /*
-                    // Compare modified time
+                    // Check if the file is already backed up and if it has been modified since
+                    // Get modified time and filesize by querying metadata
                     let do_upload: bool;
                     let metadata = match std::fs::metadata(&path) {
                         Ok(m) => m,
@@ -129,30 +153,29 @@ pub fn start(config: &Config) {
                         }
                     };
                     let modified_time = match metadata.modified().unwrap().duration_since(std::time::UNIX_EPOCH) {
-                        Ok(v) => v.as_secs() * 1000, // Convert seconds to milliseconds
+                        Ok(v) => v.as_millis() as u64, // Convert seconds to milliseconds
                         Err(_e) => 0u64
                     };
                     let filesize = metadata.len(); // Used later as well
 
-                    match sfl.binary_search(&sf) {
-                        Ok(v) => { // A file with the same path+name exists
-                            // Check if the local file was modified since it was last uploaded
-                            if modified_time > sfl[v].upload_timestamp {
-                                do_upload = true;
-                            } else {
-                                do_upload = false;
-                            }
+                    // Returns 'None' if entry hasn't been uploaded
+                    match manifest.lock().unwrap().get_timestamp_for_path(&path) {
+                        Some(t) => {
+                            do_upload = modified_time > t;
                         },
-                        Err(_e) => { // No matching path+name exists
+                        None => {
                             do_upload = true;
                         }
                     }
                     if !do_upload {
-                        //println!("Skipping {:?}", path_str);
                         continue;
                     }
-                     */
-                    println!("Uploading {:?}", path_str);
+
+                    // Get the name to use in B2
+                    // Either masked name or web-compatible path
+                    let name_in_b2 = manifest.lock().unwrap().get_or_generate_mask(&path, modified_time);
+
+                    println!("Uploading {:?} as {:?}", path, name_in_b2);
 
                     // Try uploading up to 5 times
                     for attempts in 0..5 {
@@ -165,43 +188,47 @@ pub fn start(config: &Config) {
                         };
 
                         // TODO if encryption is on, the filesize will be larger
-                        /*
+                        // TODO Determine what this size is
                         let params = raze::api::FileParameters {
-                            file_path: name_in_b2,
-                            file_size: filesize,
+                            file_path: &name_in_b2,
+                            file_size: get_encrypted_size(filesize),
                             content_type: None, // auto
                             content_sha1: Sha1Variant::HexAtEnd,
-                            last_modified_millis: modified_time
+                            last_modified_millis: modified_time,
                         };
-                         */
 
-                        // If bandwidth == 0, do not throttle
-                        // TODO We need to wrap this in the encrypting `Read`er
-                        /*
-                        let result = if bandwidth > 0 {
-                            let file = raze::util::ReadThrottled::wrap(
-                                raze::util::ReadHashAtEnd::wrap(file), bandwidth);
+                        let (start_nonce,allocated) = {
+                            let mut n = nonce_ctr.lock().unwrap();
+                            let req = get_nonces_required(filesize);
+                            *n += req;
+                            (*n-req, req)
+                        };
+                        println!("Using nonce {} through {} ({})", start_nonce, start_nonce+allocated-1, allocated);
+
+                        // TODO Handle bandwidth limiting by wrapping in throttled reader
+                        let result = if config.encrypt.unwrap() {
+                            let file = raze::util::ReadHashAtEnd::wrap(
+                                EncryptingReader::wrap(file,
+                                                        &key.unwrap(),
+                                                        start_nonce,
+                                                        allocated));
                             raze::api::b2_upload_file(&client, &upauth, file, params)
                         } else {
                             let file = raze::util::ReadHashAtEnd::wrap(file);
                             raze::api::b2_upload_file(&client, &upauth, file, params)
                         };
-                         */
 
-                        /*
                         match result {
                             Ok(_) => break,
                             Err(e) => {
                                 println!("Upload failed: {:?}", e);
                                 match e {
-                                    raze::Error::ReqwestError(e) => { println!("Reason: {:?}", e); },
-                                    raze::Error::IOError(e) => { println!("Reason: {:?}", e); },
-                                    raze::Error::SerdeError(e) => { println!("Reason: {:?}", e); },
                                     raze::Error::B2Error(e) => {
                                         // TODO: consider adding re-auth here
                                         // Both 'auth' and 'upauth' can expire
-                                        println!("Reason: {:?}", e);
+                                        //println!("Reason: {:?}", e);
                                     },
+                                    _ => (),
                                 }
 
                                 if attempts == 4 {
@@ -213,8 +240,6 @@ pub fn start(config: &Config) {
                                 }
                             }
                         }
-
-                         */
                     }
                 }
             });

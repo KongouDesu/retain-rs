@@ -63,8 +63,24 @@ impl FileManifest {
         }
     }
 
+    pub fn get_timestamp_for_path<T: AsRef<str>>(&mut self, path: T) -> Option<u64> {
+        match self.files.binary_search_by(|e| (e.path[..].cmp(path.as_ref()))) {
+            Ok(n) => Some(self.files[n].timestamp),
+            Err(_) => None,
+        }
+    }
+
     // TODO Function to get modified time and path from mask
     // TODO Function to remove entry
+
+    // Under Unix, all paths are naturally prefix with '/' (the root)
+    // B2 will not emulate folders if we start the path with a slash,
+    // so we strip it here to make it behave correctly
+    // let name_in_b2 = if cfg!(windows) {
+    // &path_str
+    // } else {
+    // &path_str[1..]
+    // };
 }
 
 #[cfg(test)]

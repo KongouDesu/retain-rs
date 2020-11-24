@@ -50,3 +50,9 @@ pub fn key_from_file<T: AsRef<str>>(path: T) -> Result<Key,std::io::Error> {
     Ok(Key::clone_from_slice(&bytes))
 }
 
+// Compute how many bytes a file will be after it is encrypted
+pub fn get_encrypted_size(unencrypted_size: u64) -> u64 {
+    // 16 byte nonce + 16 byte MAC per DATA_LENGTH bytes (Accounts for padding)
+    16 + (((unencrypted_size+3)/DATA_LENGTH as u64)+1)*BLOCK_LENGTH as u64
+}
+
