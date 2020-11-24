@@ -4,12 +4,10 @@ use clap::{Arg, App, SubCommand, crate_version};
 use crate::config::Config;
 
 mod config;
-
 mod subcommands;
-
 mod filelist;
-
 mod encryption;
+mod manifest;
 
 
 fn main() {
