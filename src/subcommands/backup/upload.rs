@@ -10,6 +10,7 @@ use raze::Error;
 use crate::encryption::{get_encrypted_size, get_nonces_required};
 use crate::encryption::reader::EncryptingReader;
 use chacha20poly1305::Key;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 pub fn start(config: &Config) {
     let t_start = std::time::Instant::now();
@@ -55,7 +56,7 @@ pub fn start(config: &Config) {
     let mut manifest = match crate::manifest::FileManifest::from_file("manifest.json") {
         Ok(fm) => fm,
         Err(err) => {
-            printcoln(Color::Red, format!("[{:.3}] Failed to load file manifest {:?}", t_start.elapsed().as_secs_f32(), err));
+            printcoln(Color::Red, format!("[{:.3}] Failed to load file manifest ({})", t_start.elapsed().as_secs_f32(), err));
             printcoln(Color::Yellow, format!("[{:.3}] If it is missing due to the program being set up without using the init command:", t_start.elapsed().as_secs_f32()));
             printcoln(Color::Yellow, format!("[{:.3}] * Run init to generate a new one, starting tracking from scratch", t_start.elapsed().as_secs_f32()));
             printcoln(Color::Yellow, format!("[{:.3}] * Or ensure your previous manifest can be found", t_start.elapsed().as_secs_f32()));
@@ -66,10 +67,10 @@ pub fn start(config: &Config) {
     printcoln(Color::Green, format!("[{:.3}] Loaded manifest", t_start.elapsed().as_secs_f32()));
 
     printcoln(Color::Green, format!("[{:.3}] Building list of files to upload...", t_start.elapsed().as_secs_f32()));
-    let files = filelist::build_file_list(config.backup_list.as_ref().unwrap());
-    printcoln(Color::Green, format!("[{:.3}] Complete ({} files)", t_start.elapsed().as_secs_f32(), files.len()));
+    let filelist = filelist::build_file_list(config.backup_list.as_ref().unwrap());
+    printcoln(Color::Green, format!("[{:.3}] Complete ({} files)", t_start.elapsed().as_secs_f32(), filelist.len()));
 
-    let files = Arc::new(Mutex::new(files));
+    let file_queue = Arc::new(Mutex::new(filelist));
     let client = reqwest::blocking::Client::builder().timeout(None).build().unwrap();
 
     printcoln(Color::Green, format!("[{:.3}] Authenticating...", t_start.elapsed().as_secs_f32()));
@@ -115,14 +116,76 @@ pub fn start(config: &Config) {
     let mut nonce_ctr = Mutex::new(config.nonce_ctr);
 
 
-    let pool = Pool::new(8); // Pool size = num threads = concurrent uploads
+    // Pool size = num threads = concurrent uploads
+    // 1 extra thread is used to sync+upload the manifest every few minutes
+    let pool = Pool::new(9);
+    let busy_threads = AtomicUsize::new(pool.workers()-1);
     pool.scoped(|scope| {
-        // Spawn 1 task per worker
-        for i in 0..pool.workers() {
-            let files = files.clone();
-            let client = &client;
-            let auth = &auth;
-            let nonce_ctr = &nonce_ctr;
+        // Spawn sync task
+        let files = file_queue.clone();
+        let client = &client;
+        let auth = &auth;
+        let manifest = &manifest_mutex;
+        let upauth = raze::api::b2_get_upload_url(&client, &auth, bucket_id).unwrap();
+        let nonce_ctr = &nonce_ctr;
+        let busy_threads = &busy_threads;
+        scope.execute(move || {
+            let mut last_sync = std::time::Instant::now();
+            loop {
+                // Every 10 secs, check if there are still more items left in queue
+                // We need to know, s.t. we can terminate this thread when there is no more work
+                std::thread::sleep(Duration::from_secs(10));
+
+                let active_threads = busy_threads.load(Ordering::SeqCst);
+
+                // Check if it's time to sync the manifest
+                // Every 5 minutes or if all workers are done
+                if last_sync.elapsed().as_secs_f32() >= 60.0*5.0 || active_threads == 0 {
+                    if active_threads == 0 {
+                        printcoln(Color::Green, format!("[{:.3}] Finalizing manifest sync", t_start.elapsed().as_secs_f32()));
+                    }
+                    manifest.lock().unwrap().to_file("manifest.json").unwrap();
+
+                    let filesize = std::fs::metadata("manifest.json").unwrap().len();
+                    let file = std::fs::File::open("manifest.json").unwrap();
+
+                    let params = raze::api::FileParameters {
+                        file_path: "manifest.json", // NEVER mask so we can find it anytime
+                        file_size: if config.encrypt.unwrap() { get_encrypted_size(filesize) } else { filesize },
+                        content_type: None, // auto
+                        content_sha1: Sha1Variant::HexAtEnd,
+                        last_modified_millis: 0,
+                    };
+
+                    let (start_nonce,allocated) = {
+                        let mut n = nonce_ctr.lock().unwrap();
+                        let req = get_nonces_required(filesize);
+                        *n += req;
+                        (*n-req, req)
+                    };
+
+                    let file = if config.encrypt.unwrap() {
+                        let file = raze::util::ReadHashAtEnd::wrap(
+                            EncryptingReader::wrap(file,
+                                                   &key.unwrap(),
+                                                   start_nonce,
+                                                   allocated));
+                        raze::api::b2_upload_file(&client, &upauth, file, params)
+                    } else {
+                        let file = raze::util::ReadHashAtEnd::wrap(file);
+                        raze::api::b2_upload_file(&client, &upauth, file, params)
+                    };
+
+                    if active_threads == 0 {
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Spawn upload tasks
+        for i in 0..pool.workers()-1 {
+            let files = file_queue.clone();
 
             let manifest = &manifest_mutex;
             scope.execute(move || {
@@ -136,6 +199,8 @@ pub fn start(config: &Config) {
                         Some(p) => p,
                         None => {
                             // List is empty, nothing more to upload
+                            // Decrement busy threads by 1
+                            busy_threads.fetch_sub(1, Ordering::SeqCst);
                             break;
                         }
                     };
@@ -159,9 +224,9 @@ pub fn start(config: &Config) {
                     let filesize = metadata.len(); // Used later as well
 
                     // Returns 'None' if entry hasn't been uploaded
-                    match manifest.lock().unwrap().get_timestamp_for_path(&path) {
+                    match manifest.lock().unwrap().get_from_path(&path) {
                         Some(t) => {
-                            do_upload = modified_time > t;
+                            do_upload = modified_time > t.0;
                         },
                         None => {
                             do_upload = true;
@@ -170,10 +235,11 @@ pub fn start(config: &Config) {
                     if !do_upload {
                         continue;
                     }
+                    manifest.lock().unwrap().update_timestamp(&path, modified_time);
 
                     // Get the name to use in B2
                     // Either masked name or web-compatible path
-                    let name_in_b2 = manifest.lock().unwrap().get_or_generate_mask(&path, modified_time);
+                    let name_in_b2 = manifest.lock().unwrap().get_mask(&path, modified_time).1;
 
                     println!("Uploading {:?} as {:?}", path, name_in_b2);
 
@@ -187,11 +253,9 @@ pub fn start(config: &Config) {
                             }
                         };
 
-                        // TODO if encryption is on, the filesize will be larger
-                        // TODO Determine what this size is
                         let params = raze::api::FileParameters {
                             file_path: &name_in_b2,
-                            file_size: get_encrypted_size(filesize),
+                            file_size: if config.encrypt.unwrap() { get_encrypted_size(filesize) } else { filesize },
                             content_type: None, // auto
                             content_sha1: Sha1Variant::HexAtEnd,
                             last_modified_millis: modified_time,
@@ -226,7 +290,7 @@ pub fn start(config: &Config) {
                                     raze::Error::B2Error(e) => {
                                         // TODO: consider adding re-auth here
                                         // Both 'auth' and 'upauth' can expire
-                                        //println!("Reason: {:?}", e);
+                                        println!("Reason: {:?}", e);
                                     },
                                     _ => (),
                                 }
@@ -245,4 +309,9 @@ pub fn start(config: &Config) {
             });
         }
     });
+
+    // The manifest is automatically written to disk and synced to B2
+    // This happens every 5 minutes while uploading and when the backup finishes
+
+    printcoln(Color::Green, format!("[{:.3}] Backup Completed!", t_start.elapsed().as_secs_f32()));
 }
