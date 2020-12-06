@@ -11,6 +11,9 @@ use crate::encryption::{get_encrypted_size, get_nonces_required};
 use crate::encryption::reader::EncryptingReader;
 use chacha20poly1305::Key;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use ctrlc;
+use std::sync::mpsc;
+use std::process::abort;
 
 pub fn start(config: &Config) {
     let t_start = std::time::Instant::now();
@@ -115,6 +118,12 @@ pub fn start(config: &Config) {
     // Load last known nonce
     let mut nonce_ctr = Mutex::new(config.nonce_ctr);
 
+    // Setup interrupt handler
+    let (tx,rx) = mpsc::channel();
+    ctrlc::set_handler(move || {
+        tx.send(1).unwrap();
+    }).expect("Failed to set Ctrl-C handler!");
+
 
     // Pool size = num threads = concurrent uploads
     // 1 extra thread is used to sync+upload the manifest every few minutes
@@ -132,9 +141,19 @@ pub fn start(config: &Config) {
         scope.execute(move || {
             let mut last_sync = std::time::Instant::now();
             loop {
-                // Every 10 secs, check if there are still more items left in queue
+                // Every 5 secs, check if there are still more items left in queue
                 // We need to know, s.t. we can terminate this thread when there is no more work
-                std::thread::sleep(Duration::from_secs(10));
+                // If we received an Ok(n), we received an interrupt signal and should terminate as soon as possible
+                let res = rx.recv_timeout(Duration::from_secs(5));
+
+                if res.is_ok() {
+                    printcoln(Color::Yellow, format!("[{:.3}] Interrupt received", t_start.elapsed().as_secs_f32()));
+                    printcoln(Color::Yellow, format!("[{:.3}] Saving manifest locally...", t_start.elapsed().as_secs_f32()));
+                    manifest.lock().unwrap().to_file("manifest.json").unwrap();
+                    printcoln(Color::Yellow, format!("[{:.3}] Warning: manifest was only saved locally due to an interruption", t_start.elapsed().as_secs_f32()));
+                    printcoln(Color::Yellow, format!("[{:.3}] Using the remote manifest may result in desynchronization", t_start.elapsed().as_secs_f32()));
+                    abort();
+                }
 
                 let active_threads = busy_threads.load(Ordering::SeqCst);
 
