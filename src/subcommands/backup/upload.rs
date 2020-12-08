@@ -15,6 +15,12 @@ use ctrlc;
 use std::sync::mpsc;
 use std::process::abort;
 
+// Start backing up files
+// This will:
+// 1. Check that everything in the config is set
+// 2. Build the list of files defined in the backup-list
+// 3. Authenticate with the B2 API
+// 4. Upload new and changed files
 pub fn start(config: &Config) {
     let t_start = std::time::Instant::now();
     // If this succeeds, all values are set and we can unwrap them
@@ -89,6 +95,7 @@ pub fn start(config: &Config) {
     printcoln(Color::Green, format!("[{:.3}] Success", t_start.elapsed().as_secs_f32()));
     printcoln(Color::Green, format!("[{:.3}] Resolving bucket name", t_start.elapsed().as_secs_f32()));
 
+    // Note that since we supply a bucket name and names are unique, we should get 0 or 1 results
     let params = ListBucketParams {
         bucket_id: None,
         bucket_name: Some(config.bucket_name.as_ref().unwrap().to_string()),
@@ -104,8 +111,8 @@ pub fn start(config: &Config) {
     };
 
     let bucket_name = config.bucket_name.as_ref().unwrap();
-    let bucket_id = match buckets.iter().find(|b| &b.bucket_name == bucket_name) {
-        Some(bid) => &bid.bucket_id,
+    let bucket_id = match buckets.get(0) {
+        Some(res) => &res.bucket_id,
         None => {
             printcoln(Color::Red, format!("[{:.3}] No bucket with the name '{}'", t_start.elapsed().as_secs_f32(), bucket_name));
             return;

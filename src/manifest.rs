@@ -25,16 +25,17 @@ const MASK_SIZE: usize = 64;
 #[derive(Serialize,Deserialize,Debug)]
 pub struct FileManifest {
     // If true, mask names, if false, translate to B2 friendly paths
-    mask: bool,
+    pub mask: bool,
     // Original name, modified timestamp, masked name
-    files: Vec<FileEntry>,
+    pub files: Vec<FileEntry>,
 }
 
 #[derive(Serialize,Deserialize,Debug)]
-struct FileEntry {
-    path: String,
-    timestamp: u64,
-    mask: String,
+pub struct FileEntry {
+    pub path: String,
+    // Timestamp is modified time in milliseconds since Unix Epoch
+    pub timestamp: u64,
+    pub mask: String,
 }
 
 
@@ -60,12 +61,13 @@ impl FileManifest {
                     false => {
                         // On Unix-whatever, everything is prefixed with the '/' root
                         // B2's web interface will not emulate folders unless we strip it
-                        // Note that we _will_ have to add it back when downloading files
+                        let p;
                         if cfg!(windows) {
-                            path.as_ref().to_string()
+                            p = path.as_ref().to_string();
                         } else {
-                            path.as_ref()[1..].to_string()
+                            p = path.as_ref()[1..].to_string();
                         }
+                        p.replace("\\","/") // Standardize separators
                     }
                 };
                 self.files.insert(n, FileEntry {
