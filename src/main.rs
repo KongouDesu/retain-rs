@@ -84,14 +84,14 @@ fn main() {
                 .takes_value(true)
                 .value_names(&["IN_FILE","OUT_FILE"])))
         .subcommand(SubCommand::with_name("check")
-            .about("Perform a check of the current configuration")
-            .long_about("Perform a check of the current configuration\n\
-                        This will verify that everything is configured\n\
-                        Check that encryption works, if enabled\n\
-                        Check if the authorization is valid\n\
-                        Check if the bucket is accessible\n\
-                        Check if the bucket has info about the backup\n\
-                        Check if that info matches current settings"))
+            .about("Checks the config and attempts to resolve de-synchronization with remote")
+            .long_about("Ensures the configuration is correct\n
+            Attempts to resolve de-synchronization\n\
+            Local and remote can become desynchronized due to interruptions or errors\n\
+            This can result in wasted space on remote and/or some files not being backed up\n\
+            If a remote file cannot be found in the local manifest, it is deleted\n\
+            If a local file cannot find it's corresponding remote entry, it is removed from the local manifest\n\
+            Note that this means you may need to run 'backup upload' afterwards to ensure all files are uploaded"))
         .subcommand(SubCommand::with_name("init")
             .about("Enter interactive initialization mode")
             .long_about("Used to interactively set up the program\n\
@@ -124,7 +124,7 @@ fn main() {
             config.save_to(cfg_location).unwrap();
         },
         ("status", status_args) => subcommands::status(&config),
-        ("backup", backup_args) => subcommands::backup::backup(&config, backup_args),
+        ("backup", backup_args) => subcommands::backup::backup(&mut config, backup_args),
         ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
         ("check", _check_args) => unimplemented!(),
         _ => {

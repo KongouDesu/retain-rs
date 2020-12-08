@@ -21,10 +21,10 @@ use std::process::abort;
 // 2. Build the list of files defined in the backup-list
 // 3. Authenticate with the B2 API
 // 4. Upload new and changed files
-pub fn start(config: &Config) {
+pub fn start(config: &mut Config) {
     let t_start = std::time::Instant::now();
     // If this succeeds, all values are set and we can unwrap them
-    match &config.is_configured() {
+    match config.is_configured() {
         Ok(_) => (),
         Err(err) => {
             printcoln(Color::Red, format!("Invalid config ({})", err));
@@ -122,8 +122,9 @@ pub fn start(config: &Config) {
 
     printcoln(Color::Green, format!("[{:.3}] Beginning upload", t_start.elapsed().as_secs_f32()));
 
+    let do_encrypt = config.encrypt.unwrap();
     // Load last known nonce
-    let mut nonce_ctr = Mutex::new(config.nonce_ctr);
+    let mut config_handle = Mutex::new(config);
 
     // Setup interrupt handler
     let (tx,rx) = mpsc::channel();
@@ -143,7 +144,7 @@ pub fn start(config: &Config) {
         let auth = &auth;
         let manifest = &manifest_mutex;
         let upauth = raze::api::b2_get_upload_url(&client, &auth, bucket_id).unwrap();
-        let nonce_ctr = &nonce_ctr;
+        let config_handle = &config_handle;
         let busy_threads = &busy_threads;
         scope.execute(move || {
             let mut last_sync = std::time::Instant::now();
@@ -159,6 +160,7 @@ pub fn start(config: &Config) {
                     manifest.lock().unwrap().to_file("manifest.json").unwrap();
                     printcoln(Color::Yellow, format!("[{:.3}] Warning: manifest was only saved locally due to an interruption", t_start.elapsed().as_secs_f32()));
                     printcoln(Color::Yellow, format!("[{:.3}] Using the remote manifest may result in desynchronization", t_start.elapsed().as_secs_f32()));
+                    printcoln(Color::Yellow, format!("[{:.3}] If interrupted due to errors, you should run 'retain-rs check' to re-sync local and remote", t_start.elapsed().as_secs_f32()));
                     abort();
                 }
 
@@ -177,20 +179,19 @@ pub fn start(config: &Config) {
 
                     let params = raze::api::FileParameters {
                         file_path: "manifest.json", // NEVER mask so we can find it anytime
-                        file_size: if config.encrypt.unwrap() { get_encrypted_size(filesize) } else { filesize },
+                        file_size: if do_encrypt { get_encrypted_size(filesize) } else { filesize },
                         content_type: None, // auto
                         content_sha1: Sha1Variant::HexAtEnd,
                         last_modified_millis: 0,
                     };
 
-                    let (start_nonce,allocated) = {
-                        let mut n = nonce_ctr.lock().unwrap();
-                        let req = get_nonces_required(filesize);
-                        *n += req;
-                        (*n-req, req)
-                    };
-
-                    let file = if config.encrypt.unwrap() {
+                    let file = if do_encrypt {
+                        let (start_nonce,allocated) = {
+                            let mut n = config_handle.lock().unwrap();
+                            let req = get_nonces_required(filesize);
+                            let start = n.consume_nonces(req);
+                            (start, req)
+                        };
                         let file = raze::util::ReadHashAtEnd::wrap(
                             EncryptingReader::wrap(file,
                                                    &key.unwrap(),
@@ -267,7 +268,7 @@ pub fn start(config: &Config) {
                     // Either masked name or web-compatible path
                     let name_in_b2 = manifest.lock().unwrap().get_mask(&path, modified_time).1;
 
-                    println!("Uploading {:?} as {:?}", path, name_in_b2);
+                    println!("Uploading {:?} -> {:?}", path, name_in_b2);
 
                     // Try uploading up to 5 times
                     for attempts in 0..5 {
@@ -281,22 +282,22 @@ pub fn start(config: &Config) {
 
                         let params = raze::api::FileParameters {
                             file_path: &name_in_b2,
-                            file_size: if config.encrypt.unwrap() { get_encrypted_size(filesize) } else { filesize },
+                            file_size: if do_encrypt { get_encrypted_size(filesize) } else { filesize },
                             content_type: None, // auto
                             content_sha1: Sha1Variant::HexAtEnd,
                             last_modified_millis: modified_time,
                         };
 
                         let (start_nonce,allocated) = {
-                            let mut n = nonce_ctr.lock().unwrap();
+                            let mut n = config_handle.lock().unwrap();
                             let req = get_nonces_required(filesize);
-                            *n += req;
-                            (*n-req, req)
+                            let start = n.consume_nonces(req);
+                            (start, req)
                         };
                         println!("Using nonce {} through {} ({})", start_nonce, start_nonce+allocated-1, allocated);
 
                         // TODO Handle bandwidth limiting by wrapping in throttled reader
-                        let result = if config.encrypt.unwrap() {
+                        let result = if do_encrypt {
                             let file = raze::util::ReadHashAtEnd::wrap(
                                 EncryptingReader::wrap(file,
                                                         &key.unwrap(),

@@ -63,8 +63,12 @@ pub fn encrypt(config: &mut Config, args: Option<&ArgMatches>) {
             }
         };
 
-        let mut reader = EncryptingReader::wrap(input, &key, config.nonce_ctr,
-                                            get_nonces_required(inp_size));
+        let (start_nonce,allocated) = {
+            let req = get_nonces_required(inp_size);
+            let start = config.consume_nonces(req);
+            (start, req)
+        };
+        let mut reader = EncryptingReader::wrap(input, &key, start_nonce, allocated);
 
         let mut buf = [0u8; 4096];
         while let Ok(n) = reader.read(&mut buf) {
