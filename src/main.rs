@@ -11,7 +11,7 @@ mod manifest;
 
 
 fn main() {
-    let args = App::new("retain-rs")
+    let mut app = App::new("retain-rs")
         .version(&crate_version!()[..])
         .author("Kongou <github.com/KongouDesu>")
         .about("Secure backup tool targeting Backblaze B2")
@@ -92,11 +92,13 @@ fn main() {
             If a remote file cannot be found in the local manifest, it is deleted\n\
             If a local file cannot find it's corresponding remote entry, it is removed from the local manifest\n\
             Note that this means you may need to run 'backup upload' afterwards to ensure all files are uploaded"))
+
         .subcommand(SubCommand::with_name("init")
             .about("Enter interactive initialization mode")
             .long_about("Used to interactively set up the program\n\
             Walks through setting auth, choosing a bucket, etc.\n\
             Provides important information about encryption and how to choose what files gets uploaded"))
+
         .subcommand(SubCommand::with_name("backup")
             .about("Upload, download or synchronize with remote storage")
             .arg(Arg::with_name("action")
@@ -106,11 +108,10 @@ fn main() {
                 .case_insensitive(true)
                 .min_values(1)
                 .max_values(1)
-                .index(1)))
+                .index(1)));
 
 
-        .get_matches();
-
+    let args = app.get_matches();
 
     // Load config file
     let cfg_location = args.value_of("location").unwrap();
@@ -127,8 +128,9 @@ fn main() {
         ("backup", backup_args) => subcommands::backup::backup(&mut config, backup_args),
         ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
         ("check", _check_args) => unimplemented!(),
+        ("init", _) => subcommands::init::init(&mut config),
         _ => {
-            println!("{}",args.usage());
+            println!("{}", args.usage());
         }
     };
 

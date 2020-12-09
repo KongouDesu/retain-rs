@@ -8,3 +8,6 @@ pub mod backup;
 
 pub mod encrypt;
 pub use encrypt::encrypt;
+
+pub mod init;
+pub use init::init;

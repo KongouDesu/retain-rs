@@ -8,6 +8,7 @@ pub fn printcol<T: AsRef<str>>(color: Color, text: T) {
     stdout.set_color(ColorSpec::new().set_fg(Some(color))).unwrap();
     write!(&mut stdout, "{}", text.as_ref()).unwrap();
     stdout.reset().unwrap();
+    stdout.flush();
 }
 
 /// Prints the given text with the given color
@@ -17,4 +18,5 @@ pub fn printcoln<T: AsRef<str>>(color: Color, text: T) {
     stdout.set_color(ColorSpec::new().set_fg(Some(color))).unwrap();
     writeln!(&mut stdout, "{}", text.as_ref()).unwrap();
     stdout.reset().unwrap();
+    stdout.flush();
 }
