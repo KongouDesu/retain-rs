@@ -7,3 +7,6 @@ backuplist.txt
 *.decrypted
 *.encrypted
 secret.jpg
+retain-rs-key
+retain.cfg
+manifest.json

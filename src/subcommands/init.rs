@@ -4,11 +4,31 @@ use termcolor::Color;
 use std::io::{stdin, Read, Write, BufRead};
 use raze::api::ListBucketParams;
 use rand::{thread_rng, Rng};
+use crate::manifest::FileManifest;
+use std::path::Path;
+use std::process::abort;
 
 pub fn init(config: &mut Config) {
     printcoln(Color::Yellow,"Welcome to the retain-rs setup util");
     printcoln(Color::Yellow,format!("Initializing config as {}",config.location));
-    printcoln(Color::Yellow,"Note that any existing settings at that location will be overwritten");
+    println!();
+
+    if Path::new("retain-rs-key").exists() {
+        printcoln(Color::Red, "Error: an old encryption key exists at 'retain-rs-key'");
+        printcoln(Color::Red, "Manually back up the key before re-running init");
+        printcoln(Color::Red, "Notice: 'init' is not intended to re-configure the program");
+        printcoln(Color::Red, "If you want to change settings, use 'config' instead!");
+        panic!("retain-rs-key already exists! Aborting to avoid potentially overwriting secret key!");
+    }
+    if Path::new("manifest.json").exists() {
+        printcoln(Color::Red, "Warning: an old file manifest exists at 'manifest.json'");
+        printcoln(Color::Red, "Continuing will erase the current manifest.json file");
+        printcoln(Color::Red, "This will cause desynchronization between local and remote");
+        printcoln(Color::Red, "If encryption is on, file names for files in remote will be lost");
+        printcoln(Color::Red, "Notice: 'init' is not intended to re-configure the program");
+        printcoln(Color::Red, "If you want to change settings, use 'config' instead!");
+    }
+
     println!();
     printcoln(Color::Yellow, "First we need to set up authentication with the B2 API");
 
@@ -101,7 +121,12 @@ pub fn init(config: &mut Config) {
     printcol(Color::White, "Name: ");
     let backuplist = stdin().lock().lines().next().unwrap().unwrap();
     printcoln(Color::Yellow, format!("Backup file list location: {}", backuplist));
+    if !Path::new(&backuplist).exists() {
+        std::fs::write(&backuplist, "--- Backup definitions go here, refer to docs for more info ---").unwrap_or_else(|_|
+        printcoln(Color::Yellow, "Failed to create backup-list file, please create it yourself"));
+    }
     config.backup_list = Some(backuplist);
+
 
 
     printcoln(Color::Yellow, "-----");
@@ -116,11 +141,12 @@ pub fn init(config: &mut Config) {
         match encrypt.as_ref() {
             "y" => {
                 printcoln(Color::Green, "Encryption is ON");
+                FileManifest {
+                    mask: true,
+                    files: vec![]
+                }.to_file("manifest.json").unwrap();
                 config.encrypt = Some(true);
                 config.secret_key = Some("retain-rs-key".to_string());
-                if std::path::Path::new("retain-rs-key").exists() {
-                    panic!("retain-rs-key already exists! Aborting to avoid potentially overwriting secret key!");
-                }
                 // Generate key
                 let mut rng = thread_rng();
                 let mut key_bytes = [0u8; 32];
@@ -131,6 +157,10 @@ pub fn init(config: &mut Config) {
             "n" => {
                 printcoln(Color::Yellow, "Encryption is OFF");
                 config.encrypt = Some(false);
+                FileManifest {
+                    mask: false,
+                    files: vec![]
+                }.to_file("manifest.json").unwrap();
                 break;
             }
             _ => {

@@ -124,7 +124,7 @@ fn main() {
             // Save config
             config.save_to(cfg_location).unwrap();
         },
-        ("status", status_args) => subcommands::status(&config),
+        ("status", _status_args) => subcommands::status(&config),
         ("backup", backup_args) => subcommands::backup::backup(&mut config, backup_args),
         ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
         ("check", _check_args) => unimplemented!(),
