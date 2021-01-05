@@ -268,7 +268,8 @@ pub fn start(config: &mut Config) {
                     // Either masked name or web-compatible path
                     let name_in_b2 = manifest.lock().unwrap().get_mask(&path, modified_time).1;
 
-                    println!("Uploading {:?} -> {:?}", path, name_in_b2);
+                    //println!("Uploading {:?} -> {:?}", path, name_in_b2);
+                    println!("Uploading {}", path);
 
                     // Try uploading up to 5 times
                     for attempts in 0..5 {
@@ -294,7 +295,7 @@ pub fn start(config: &mut Config) {
                             let start = n.consume_nonces(req);
                             (start, req)
                         };
-                        println!("Using nonce {} through {} ({})", start_nonce, start_nonce+allocated-1, allocated);
+                        // println!("Using nonce {} through {} ({})", start_nonce, start_nonce+allocated-1, allocated);
 
                         // TODO Handle bandwidth limiting by wrapping in throttled reader
                         let result = if do_encrypt {
