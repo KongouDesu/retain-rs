@@ -36,7 +36,8 @@ pub fn start(config: &mut Config) {
     match filelist::verify_structure(config.backup_list.as_ref().unwrap()) {
         Ok(_) => (),
         Err(e) => {
-            printcoln(Color::Red, format!("{}", e));
+            printcoln(Color::Red, format!("Backup list is invalid: {}", e));
+            return;
         }
     }
 
@@ -231,8 +232,6 @@ pub fn start(config: &mut Config) {
                             break;
                         }
                     };
-                    // Normalize path style s.t. we _always_ use forward slash as separator
-                    let path = path.replace("\\", "/");
 
                     // Check if the file is already backed up and if it has been modified since
                     // Get modified time and filesize by querying metadata

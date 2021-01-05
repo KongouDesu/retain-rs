@@ -83,6 +83,9 @@ pub fn build_file_list<T: AsRef<Path>>(file: T) -> Vec<String> {
     // Note: we chain an empty string to make sure it adds the last entry
     for line in lines.chain(vec![""]) {
         let line = line.trim();
+        if line.len() == 0 {
+            continue;
+        }
         if line.starts_with("-") {
             regex_str.push(line[1..].trim());
         } else {
