@@ -1,6 +1,6 @@
 mod colorutil;
 
-use clap::{Arg, App, SubCommand, crate_version};
+use clap::{Arg, App, SubCommand, crate_version, AppSettings};
 use crate::config::Config;
 
 mod config;
@@ -83,15 +83,25 @@ fn main() {
                 .number_of_values(2)
                 .takes_value(true)
                 .value_names(&["IN_FILE","OUT_FILE"])))
-        .subcommand(SubCommand::with_name("check")
-            .about("Checks the config and attempts to resolve de-synchronization with remote")
-            .long_about("Ensures the configuration is correct\n
-            Attempts to resolve de-synchronization\n\
-            Local and remote can become desynchronized due to interruptions or errors\n\
-            This can result in wasted space on remote and/or some files not being backed up\n\
-            If a remote file cannot be found in the local manifest, it is deleted\n\
-            If a local file cannot find it's corresponding remote entry, it is removed from the local manifest\n\
-            Note that this means you may need to run 'backup upload' afterwards to ensure all files are uploaded"))
+
+        .subcommand(SubCommand::with_name("clean")
+            .about("Fix de-sync and clean up unused files")
+            .long_about("Resolved de-synchronization and removes unused files\n\
+            Local and remote can become de-synchronized due to interruptions or errors\n\
+            If this happens, some files may not be backed up and/or we may be wasting space\n\
+            Files no longer found on the local system are also cleaned up\n\
+            Note that this never removes any local files\n\
+            It is recommended to run 'backup upload' afterwards to ensure everything is synced")
+            .arg(Arg::with_name("mode")
+                .help("Whether to hide (soft-delete) or hard-delete unused files")
+                .takes_value(true)
+                .case_insensitive(true)
+                .required(true)
+                .possible_values(&["hide","delete"]))
+            .arg(Arg::with_name("force")
+                .short("f")
+                .long("force")
+                .help("Force cleanup, using local manifest.json")))
 
         .subcommand(SubCommand::with_name("init")
             .about("Enter interactive initialization mode")
@@ -110,7 +120,6 @@ fn main() {
                 .max_values(1)
                 .index(1)));
 
-
     let args = app.get_matches();
 
     // Load config file
@@ -127,10 +136,11 @@ fn main() {
         ("status", _status_args) => subcommands::status(&config),
         ("backup", backup_args) => subcommands::backup::backup(&mut config, backup_args),
         ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
-        ("check", _check_args) => unimplemented!(),
+        ("clean", clean_args) => subcommands::clean::clean(&mut config, clean_args),
         ("init", _) => subcommands::init::init(&mut config),
         _ => {
             println!("{}", args.usage());
+            println!("\tUse -h for full help");
         }
     };
 
