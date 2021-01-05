@@ -38,6 +38,7 @@ pub fn clean(config: &mut Config, args: Option<&ArgMatches>) {
         Ok(_) => (),
         Err(e) => {
             printcoln(Color::Red, format!("Backup list is invalid: {}", e));
+            return;
         }
     }
 
