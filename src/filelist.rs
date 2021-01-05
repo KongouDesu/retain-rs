@@ -83,26 +83,26 @@ pub fn build_file_list<T: AsRef<Path>>(file: T) -> Vec<String> {
     // Note: we chain an empty string to make sure it adds the last entry
     for line in lines.chain(vec![""]) {
         let line = line.trim();
-        if line.len() == 0 {
-            continue;
-        }
         if line.starts_with("-") {
             regex_str.push(line[1..].trim());
         } else {
-            // New path encountered
-            // Construct RegEx set, recursively walk directory
-            let reg_set = RegexSet::new(&regex_str).unwrap();
+            if dir != "" {
+                // New path encountered
+                // Construct RegEx set, recursively walk directory
+                let reg_set = RegexSet::new(&regex_str).unwrap();
 
-            regex_str.clear();
-            for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-                let name = match entry.path().to_str() {
-                    Some(s) => s,
-                    None => continue,
-                };
-                if !reg_set.is_match(name) && entry.file_type().is_file() {
-                    files.push(name.to_string());
+                regex_str.clear();
+                for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+                    let name = match entry.path().to_str() {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    if !reg_set.is_match(name) && entry.file_type().is_file() {
+                        files.push(name.to_string());
+                    }
                 }
             }
+
             dir = line;
         }
     }
