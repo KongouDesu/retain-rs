@@ -140,7 +140,7 @@ fn main() {
         ("status", _status_args) => subcommands::status(&config),
         ("backup", backup_args) => subcommands::backup::backup(&mut config, backup_args),
         ("encryption", encrypt_args) => subcommands::encrypt::encrypt(&mut config, encrypt_args),
-        ("clean", clean_args) => subcommands::clean::clean(&mut config, clean_args),
+        ("clean", clean_args) => subcommands::clean::clean_using_clap(&mut config, clean_args),
         ("init", _) => subcommands::init::init(&mut config),
         _ => {
             println!("{}", args.usage());

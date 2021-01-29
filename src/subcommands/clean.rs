@@ -11,12 +11,22 @@ use std::path::Path;
 use crate::encryption::{get_encrypted_size, get_nonces_required};
 use crate::encryption::reader::EncryptingReader;
 
+// Extracts params from `args`, then calls `clean`
+pub fn clean_using_clap(config: &mut Config, args: Option<&ArgMatches>) {
+    let args = args.unwrap();
+
+    let mode = args.value_of("mode").unwrap(); // Can't fail: enforced by clap
+    let force = args.is_present("force");
+    let fast = args.is_present("fast");
+
+    clean(config, mode, force, fast);
+}
+
 // Ensures the local manifest matches the files present in remote
 // Cleans up all files in remote that can't be found in the backup-list
-pub fn clean(config: &mut Config, args: Option<&ArgMatches>) {
+pub fn clean<T: AsRef<str>>(config: &mut Config, mode: T, force: bool, fast: bool) {
     let t_start = std::time::Instant::now();
-    let args = args.unwrap();
-    let mode = args.value_of("mode").unwrap(); // Can't fail: enforced by clap
+    let mode = mode.as_ref();
 
     printcoln(Color::Yellow, "Starting cleanup");
 
@@ -134,7 +144,7 @@ pub fn clean(config: &mut Config, args: Option<&ArgMatches>) {
     // Check if the remote manifest.json is newer than the local one
     // If it is, abort
     // This is skipped if the --force flag is applied
-    if args.is_present("force") {
+    if force {
         let modified_local = match metadata("manifest.json").unwrap().modified().unwrap().duration_since(UNIX_EPOCH) {
             Ok(v) => v.as_secs() * 1000,
             Err(e) => 0,
