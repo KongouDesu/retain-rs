@@ -98,10 +98,14 @@ fn main() {
                 .case_insensitive(true)
                 .required(true)
                 .possible_values(&["hide","delete"]))
+            .arg(Arg::with_name("fast")
+                .help("Use manifest to determine what files exist instead of querying B2 (which is slow)\n\
+                Note that this will miss some files if manifest and remote are de-synchronized")
+                .case_insensitive(true)
+                .long("fast"))
             .arg(Arg::with_name("force")
-                .short("f")
                 .long("force")
-                .help("Force cleanup, using local manifest.json")))
+                .help("Force cleanup, using local manifest.json without checking remote one first")))
 
         .subcommand(SubCommand::with_name("init")
             .about("Enter interactive initialization mode")
