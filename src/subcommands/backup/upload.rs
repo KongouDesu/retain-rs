@@ -140,7 +140,6 @@ pub fn start(config: &mut Config) {
     let busy_threads = AtomicUsize::new(pool.workers()-1);
     pool.scoped(|scope| {
         // Spawn sync task
-        let files = file_queue.clone();
         let client = &client;
         let auth = &auth;
         let manifest = &manifest_mutex;
@@ -203,6 +202,24 @@ pub fn start(config: &mut Config) {
                         let file = raze::util::ReadHashAtEnd::wrap(file);
                         raze::api::b2_upload_file(&client, &upauth, file, params)
                     };
+                    match file {
+                        Ok(info) => {
+                            manifest.lock().unwrap().remote_id = info.file_id.unwrap();
+                            manifest.lock().unwrap().to_file("manifest.json");
+                        },
+                        Err(err) => {
+                            printcoln(Color::Red, format!("[{:.3}] Error: sync failed", t_start.elapsed().as_secs_f32()));
+                            printcoln(Color::Red, format!("[{:.3}] Reason: {:?}", t_start.elapsed().as_secs_f32(), err));
+                            if active_threads > 0 {
+                                printcoln(Color::Yellow, format!("[{:.3}] Program can auto-recover as long as final sync doesn't fail", t_start.elapsed().as_secs_f32()));
+                            } else {
+                                printcoln(Color::Red, format!("[{:.3}] Final sync failed!", t_start.elapsed().as_secs_f32()));
+                                printcoln(Color::Red, format!("[{:.3}] Some data WILL be de-synced", t_start.elapsed().as_secs_f32()));
+                                printcoln(Color::Red, format!("[{:.3}] You should run 'retain-rs clean' without --fast", t_start.elapsed().as_secs_f32()));
+                                printcoln(Color::Red, format!("[{:.3}] Followed by 'retain-rs backup upload'", t_start.elapsed().as_secs_f32()));
+                            }
+                        }
+                    }
 
                     if active_threads == 0 {
                         break;
@@ -212,7 +229,7 @@ pub fn start(config: &mut Config) {
         });
 
         // Spawn upload tasks
-        for i in 0..pool.workers()-1 {
+        for _ in 0..pool.workers()-1 {
             let files = file_queue.clone();
 
             let manifest = &manifest_mutex;

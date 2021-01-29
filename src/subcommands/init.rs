@@ -73,7 +73,7 @@ pub fn init(config: &mut Config) {
             }
             list
         }
-        Err(err) => {
+        Err(_) => {
             printcoln(Color::Yellow, "Failed to get list of buckets");
             printcoln(Color::Yellow, "This is likely because the supplied auth is restricted to a specific bucket");
             printcoln(Color::Yellow, "If that is the case, you can ignore this error");
@@ -143,6 +143,7 @@ pub fn init(config: &mut Config) {
                 printcoln(Color::Green, "Encryption is ON");
                 FileManifest {
                     mask: true,
+                    remote_id: "not_yet_set".to_string(),
                     files: vec![]
                 }.to_file("manifest.json").unwrap();
                 config.encrypt = Some(true);
@@ -159,6 +160,7 @@ pub fn init(config: &mut Config) {
                 config.encrypt = Some(false);
                 FileManifest {
                     mask: false,
+                    remote_id: "not_yet_set".to_string(),
                     files: vec![]
                 }.to_file("manifest.json").unwrap();
                 break;

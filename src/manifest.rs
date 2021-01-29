@@ -26,6 +26,8 @@ const MASK_SIZE: usize = 64;
 pub struct FileManifest {
     // If true, mask names, if false, translate to B2 friendly paths
     pub mask: bool,
+    // The B2 'fileId' field of the remote manifest
+    pub remote_id: String,
     // Original name, modified timestamp, masked name
     pub files: Vec<FileEntry>,
 }
@@ -135,6 +137,7 @@ mod tests {
     fn test_masking() {
         let mut fm = FileManifest {
             files: vec![],
+            remote_id: "".to_owned(),
             mask: true
         };
         let mask = fm.get_mask("file.txt", 4908);
@@ -161,6 +164,7 @@ mod tests {
     fn test_nomask() {
         let mut fm = FileManifest {
             files: vec![],
+            remote_id: "".to_owned(),
             mask: false
         };
         let mask = fm.get_mask("file.txt", 4908);
