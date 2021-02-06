@@ -185,6 +185,10 @@ pub fn start(config: &mut Config) {
                         last_modified_millis: 0,
                     };
 
+                    // Delete the existing manifest
+                    // This is to prevent clutter (i.e. an old manifest being stored every 5 minutes)
+                    raze::api::b2_delete_file_version(&client, &auth, "manifest.json", &manifest.lock().unwrap().remote_id);
+
                     let file = if do_encrypt {
                         let (start_nonce,allocated) = {
                             let mut n = config_handle.lock().unwrap();
@@ -215,12 +219,12 @@ pub fn start(config: &mut Config) {
                             } else {
                                 printcoln(Color::Red, format!("[{:.3}] Final sync failed!", t_start.elapsed().as_secs_f32()));
                                 printcoln(Color::Red, format!("[{:.3}] Some data WILL be de-synced", t_start.elapsed().as_secs_f32()));
-                                printcoln(Color::Red, format!("[{:.3}] You should run 'retain-rs clean' without --fast", t_start.elapsed().as_secs_f32()));
-                                printcoln(Color::Red, format!("[{:.3}] Followed by 'retain-rs backup upload'", t_start.elapsed().as_secs_f32()));
+                                printcoln(Color::Red, format!("[{:.3}] You should run 'retain-rs backup upload'", t_start.elapsed().as_secs_f32()));
+                                printcoln(Color::Red, format!("[{:.3}] Followed by 'retain-rs clean delete' (without fast)", t_start.elapsed().as_secs_f32()));
                             }
                         }
                     }
-
+                    last_sync = std::time::Instant::now();
                     if active_threads == 0 {
                         break;
                     }
